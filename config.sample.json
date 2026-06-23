@@ -6,9 +6,12 @@
   "DownAction": "Enter",
   "PrismWindowTitleContains": ["prism"],
   "PrismInputNameContains": ["ask anything", "message", "prompt", "ask"],
+  "PrismCompileButtonNameContains": ["compile"],
   "PrismUpAction": "Win+H",
   "PrismDownAction": "Enter",
   "PrismFocusDelayMs": 150,
+  "PrismAutoCompileAfterEnter": true,
+  "PrismCompileDelayMs": 25000,
   "DoublePressMs": 900,
   "ActionCooldownMs": 800
 }

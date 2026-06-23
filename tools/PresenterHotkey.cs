@@ -19,6 +19,9 @@
 // PRISM web has unreliable built-in voice mode, so when a PRISM browser tab is
 // foreground we focus its "Ask anything" text box through UI Automation, then
 // open Windows voice typing with Win+H.
+//
+// After sending a PRISM prompt, the assistant may edit LaTeX without refreshing
+// the PDF pane. We can optionally wait, then invoke PRISM's Compile button.
 
 using System;
 using System.Collections;
@@ -74,7 +77,10 @@ internal static class PresenterHotkey
     private static KeyCombo _prismDownAction = KeyCombo.Parse("Enter", null);
     private static string[] _prismTitleContains = new[] { "prism" };
     private static string[] _prismInputNameContains = new[] { "ask anything", "message", "prompt", "ask" };
+    private static string[] _prismCompileButtonNameContains = new[] { "compile" };
     private static int _prismFocusDelayMs = 150;
+    private static bool _prismAutoCompileAfterEnter = true;
+    private static int _prismCompileDelayMs = 25000;
 
     private static int _pendingVk;
     private static long _pendingAt;
@@ -345,9 +351,11 @@ internal static class PresenterHotkey
             var foreground = GetForegroundSummary();
             if (IsPrismForeground(foreground))
             {
+                IntPtr hwnd = GetForegroundWindow();
                 SendCombo(_prismDownAction);
                 Log("Down double-press -> PRISM " + _prismDownAction.Text +
                     " (foreground=" + foreground + ", original arrows suppressed)");
+                SchedulePrismCompile(hwnd);
             }
             else
             {
@@ -483,6 +491,89 @@ internal static class PresenterHotkey
             Log("PRISM focus exception: " + ex.GetType().Name + ": " + ex.Message);
             return false;
         }
+    }
+
+    private static void SchedulePrismCompile(IntPtr hwnd)
+    {
+        if (!_prismAutoCompileAfterEnter)
+        {
+            Log("PRISM auto-compile disabled.");
+            return;
+        }
+
+        if (hwnd == IntPtr.Zero)
+        {
+            Log("PRISM auto-compile skipped: no foreground window handle.");
+            return;
+        }
+
+        int delay = Math.Max(0, _prismCompileDelayMs);
+        ThreadPool.QueueUserWorkItem(delegate
+        {
+            try
+            {
+                if (delay > 0) Thread.Sleep(delay);
+                bool clicked = TryClickPrismCompile(hwnd);
+                Log("PRISM auto-compile after Enter: clicked=" + clicked +
+                    " delayMs=" + delay);
+            }
+            catch (Exception ex)
+            {
+                Log("PRISM auto-compile exception: " + ex.GetType().Name + ": " + ex.Message);
+            }
+        });
+    }
+
+    private static bool TryClickPrismCompile(IntPtr hwnd)
+    {
+        try
+        {
+            var root = AutomationElement.FromHandle(hwnd);
+            if (root == null)
+            {
+                Log("PRISM compile failed: no automation root.");
+                return false;
+            }
+
+            AutomationElement button = FindNamedButton(root, _prismCompileButtonNameContains);
+            if (button == null)
+            {
+                Log("PRISM compile failed: no Compile button found.");
+                return false;
+            }
+
+            object invokeObj;
+            if (button.TryGetCurrentPattern(InvokePattern.Pattern, out invokeObj))
+            {
+                ((InvokePattern)invokeObj).Invoke();
+                Log("PRISM clicked Compile button: " + SafeAutomationText(button).Trim());
+                return true;
+            }
+
+            button.SetFocus();
+            SendCombo(KeyCombo.Parse("Enter", _downAction));
+            Log("PRISM focused Compile button and sent Enter: " + SafeAutomationText(button).Trim());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log("PRISM compile click exception: " + ex.GetType().Name + ": " + ex.Message);
+            return false;
+        }
+    }
+
+    private static AutomationElement FindNamedButton(AutomationElement root, string[] nameContains)
+    {
+        var buttonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
+        AutomationElementCollection all = root.FindAll(TreeScope.Descendants, buttonCondition);
+        for (int i = 0; i < all.Count; i++)
+        {
+            AutomationElement e = all[i];
+            if (!IsUsableAutomationElement(e)) continue;
+            string text = SafeAutomationText(e);
+            if (ContainsAny(text, nameContains)) return e;
+        }
+        return null;
     }
 
     private static AutomationElement FindNamedPrismInput(AutomationElement root)
@@ -714,9 +805,13 @@ internal static class PresenterHotkey
                 _prismTitleContains = ToStringArray(map["PrismWindowTitleContains"], _prismTitleContains);
             if (map.ContainsKey("PrismInputNameContains"))
                 _prismInputNameContains = ToStringArray(map["PrismInputNameContains"], _prismInputNameContains);
+            if (map.ContainsKey("PrismCompileButtonNameContains"))
+                _prismCompileButtonNameContains = ToStringArray(map["PrismCompileButtonNameContains"], _prismCompileButtonNameContains);
             if (map.ContainsKey("DoublePressMs")) _doublePressMs = ToInt(map["DoublePressMs"], _doublePressMs);
             if (map.ContainsKey("ActionCooldownMs")) _actionCooldownMs = ToInt(map["ActionCooldownMs"], _actionCooldownMs);
             if (map.ContainsKey("PrismFocusDelayMs")) _prismFocusDelayMs = ToInt(map["PrismFocusDelayMs"], _prismFocusDelayMs);
+            if (map.ContainsKey("PrismAutoCompileAfterEnter")) _prismAutoCompileAfterEnter = ToBool(map["PrismAutoCompileAfterEnter"], _prismAutoCompileAfterEnter);
+            if (map.ContainsKey("PrismCompileDelayMs")) _prismCompileDelayMs = ToInt(map["PrismCompileDelayMs"], _prismCompileDelayMs);
         }
         catch (Exception ex)
         {
@@ -736,6 +831,33 @@ internal static class PresenterHotkey
             return (int)Math.Round(Convert.ToDouble(value, CultureInfo.InvariantCulture));
         }
         catch { return fallback; }
+    }
+
+    private static bool ToBool(object value, bool fallback)
+    {
+        try
+        {
+            if (value == null) return fallback;
+            if (value is bool) return (bool)value;
+            var s = Convert.ToString(value, CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(s)) return fallback;
+            s = s.Trim();
+            if (s.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("on", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("1", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (s.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+                s.Equals("0", StringComparison.OrdinalIgnoreCase))
+                return false;
+            return fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
     }
 
     private static string[] ToStringArray(object value, string[] fallback)

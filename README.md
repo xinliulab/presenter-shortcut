@@ -55,9 +55,16 @@ This makes Codex feel like a toggle-based voice workflow even though its native 
 PRISM's built-in voice mode may not always work reliably. For PRISM, Presenter Shortcut uses Windows voice typing:
 
 - Double Up finds and focuses the `Ask anything` input box, then sends `Win+H`.
-- Double Down sends `Enter`.
+- Double Down sends `Enter`, waits for the assistant to finish, then clicks `Compile` to refresh the PDF pane.
 
 The input focus uses Windows UI Automation instead of screen coordinates, so it is more robust across window sizes and display layouts.
+
+The auto-compile delay is configurable. The default is 25 seconds:
+
+```json
+"PrismAutoCompileAfterEnter": true,
+"PrismCompileDelayMs": 25000
+```
 
 ### Installation
 
@@ -114,9 +121,12 @@ Sample behavior:
   "DownAction": "Enter",
   "PrismWindowTitleContains": ["prism"],
   "PrismInputNameContains": ["ask anything", "message", "prompt", "ask"],
+  "PrismCompileButtonNameContains": ["compile"],
   "PrismUpAction": "Win+H",
   "PrismDownAction": "Enter",
   "PrismFocusDelayMs": 150,
+  "PrismAutoCompileAfterEnter": true,
+  "PrismCompileDelayMs": 25000,
   "DoublePressMs": 900,
   "ActionCooldownMs": 800
 }
@@ -193,9 +203,16 @@ Codex 桌面应用里的 `Ctrl+Shift+D` 不是普通 toggle，而是 hold-to-dic
 PRISM 自带的 voice mode 有时不稳定，所以这里改用 Windows 自带语音输入：
 
 - 向上双击：先找到并聚焦 `Ask anything` 输入框，然后发送 `Win+H`。
-- 向下双击：发送 `Enter`。
+- 向下双击：发送 `Enter`，等待 AI Assistant 完成修改后，自动点击 `Compile` 刷新右侧 PDF。
 
 输入框定位使用 Windows UI Automation，而不是屏幕坐标，因此对窗口大小和多屏布局更稳。
+
+自动 Compile 的等待时间可以配置。默认等待 25 秒：
+
+```json
+"PrismAutoCompileAfterEnter": true,
+"PrismCompileDelayMs": 25000
+```
 
 ### 安装
 
@@ -252,9 +269,12 @@ config.sample.json
   "DownAction": "Enter",
   "PrismWindowTitleContains": ["prism"],
   "PrismInputNameContains": ["ask anything", "message", "prompt", "ask"],
+  "PrismCompileButtonNameContains": ["compile"],
   "PrismUpAction": "Win+H",
   "PrismDownAction": "Enter",
   "PrismFocusDelayMs": 150,
+  "PrismAutoCompileAfterEnter": true,
+  "PrismCompileDelayMs": 25000,
   "DoublePressMs": 900,
   "ActionCooldownMs": 800
 }
