@@ -95,7 +95,15 @@ On first run, the app creates:
 build\presenter-hotkey.json
 ```
 
-Default behavior:
+It is copied from:
+
+```text
+config.sample.json
+```
+
+Edit the generated local config for your own machine. Do not commit your local `build\presenter-hotkey.json` if it contains machine-specific settings.
+
+Sample behavior:
 
 ```json
 {
@@ -225,7 +233,15 @@ powershell -ExecutionPolicy Bypass -File .\Uninstall-PresenterHotkey.ps1
 build\presenter-hotkey.json
 ```
 
-默认配置：
+它会从下面这个示例配置复制生成：
+
+```text
+config.sample.json
+```
+
+如果你需要按自己的电脑环境调整，请改本地生成的 `build\presenter-hotkey.json`。不要把自己的本地配置提交到 GitHub。
+
+示例配置：
 
 ```json
 {
@@ -259,4 +275,3 @@ build\presenter-hotkey.json
 重点不是激光笔本身，而是交互方式正在改变。
 
 复制粘贴曾经是桌面生产力的标志性动作。语音控制 AI 正在创造新的标志性动作：打开语音，说出意图，发送。像 Presenter Shortcut 这样的小工具，就是把这个循环变成一个更自然、更快速、也更保护肩膀的物理动作。
-

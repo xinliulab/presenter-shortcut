@@ -1,8 +1,8 @@
 build/
+presenter-hotkey.json
 *.log
 *.exe
 *.pdb
 *.user
 *.suo
 .vs/
-

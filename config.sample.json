@@ -1,0 +1,14 @@
+{
+  "UpVk": "0x26",
+  "DownVk": "0x28",
+  "UpAction": "Ctrl+Shift+D",
+  "CodexUpAction": "Ctrl+Shift+D",
+  "DownAction": "Enter",
+  "PrismWindowTitleContains": ["prism"],
+  "PrismInputNameContains": ["ask anything", "message", "prompt", "ask"],
+  "PrismUpAction": "Win+H",
+  "PrismDownAction": "Enter",
+  "PrismFocusDelayMs": 150,
+  "DoublePressMs": 900,
+  "ActionCooldownMs": 800
+}
