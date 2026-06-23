@@ -22,6 +22,10 @@
 //
 // After sending a PRISM prompt, the assistant may edit LaTeX without refreshing
 // the PDF pane. We can optionally wait, then invoke PRISM's Compile button.
+//
+// Claude desktop dictation uses Ctrl+D, so when that desktop app is
+// foreground we map double ArrowUp to Ctrl+D while keeping double ArrowDown as
+// Enter.
 
 using System;
 using System.Collections;
@@ -75,9 +79,12 @@ internal static class PresenterHotkey
     private static KeyCombo _downAction = KeyCombo.Parse("Enter", null);
     private static KeyCombo _prismUpAction = KeyCombo.Parse("Win+H", null);
     private static KeyCombo _prismDownAction = KeyCombo.Parse("Enter", null);
+    private static KeyCombo _claudeUpAction = KeyCombo.Parse("Ctrl+D", null);
     private static string[] _prismTitleContains = new[] { "prism" };
     private static string[] _prismInputNameContains = new[] { "ask anything", "message", "prompt", "ask" };
     private static string[] _prismCompileButtonNameContains = new[] { "compile" };
+    private static string[] _claudeTitleContains = new[] { "claude" };
+    private static bool _claudeDesktopOnly = true;
     private static int _prismFocusDelayMs = 150;
     private static bool _prismAutoCompileAfterEnter = true;
     private static int _prismCompileDelayMs = 25000;
@@ -99,7 +106,7 @@ internal static class PresenterHotkey
 
         Log("Started low-level hook edition. up=0x" + _upVk.ToString("X2") +
             " (ChatGPT=>" + _upAction.Text + ", Codex hold=>" + _codexUpAction.Text +
-            ", PRISM focus=>" + _prismUpAction.Text + ") down=0x" + _downVk.ToString("X2") +
+            ", PRISM focus=>" + _prismUpAction.Text + ", Claude=>" + _claudeUpAction.Text + ") down=0x" + _downVk.ToString("X2") +
             " (=>" + _downAction.Text + ") doublePressMs=" + _doublePressMs +
             ". ArrowUp/ArrowDown are suppressed; single arrows are ignored.");
 
@@ -337,6 +344,13 @@ internal static class PresenterHotkey
                 ReleaseCodexHoldIfActive("PRISM foreground");
                 StartPrismDictation(foreground);
             }
+            else if (IsClaudeForeground(foreground))
+            {
+                ReleaseCodexHoldIfActive("Claude foreground");
+                SendCombo(_claudeUpAction);
+                Log("Up double-press -> Claude " + _claudeUpAction.Text +
+                    " (foreground=" + foreground + ", original arrows suppressed)");
+            }
             else
             {
                 ReleaseCodexHoldIfActive("non-Codex foreground");
@@ -409,6 +423,25 @@ internal static class PresenterHotkey
     private static bool IsPrismForeground(string summary)
     {
         return ContainsAny(summary, _prismTitleContains);
+    }
+
+    private static bool IsClaudeForeground(string summary)
+    {
+        if (!ContainsAny(summary, _claudeTitleContains)) return false;
+        if (!_claudeDesktopOnly) return true;
+        return !IsBrowserForeground(summary);
+    }
+
+    private static bool IsBrowserForeground(string summary)
+    {
+        if (string.IsNullOrEmpty(summary)) return false;
+        int slash = summary.IndexOf('/');
+        string process = slash >= 0 ? summary.Substring(0, slash).Trim() : summary.Trim();
+        return process.Equals("msedge", StringComparison.OrdinalIgnoreCase) ||
+            process.Equals("chrome", StringComparison.OrdinalIgnoreCase) ||
+            process.Equals("firefox", StringComparison.OrdinalIgnoreCase) ||
+            process.Equals("brave", StringComparison.OrdinalIgnoreCase) ||
+            process.Equals("opera", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ContainsAny(string haystack, string[] needles)
@@ -801,8 +834,12 @@ internal static class PresenterHotkey
                 _prismUpAction = KeyCombo.Parse(Convert.ToString(map["PrismUpAction"], CultureInfo.InvariantCulture), _prismUpAction);
             if (map.ContainsKey("PrismDownAction"))
                 _prismDownAction = KeyCombo.Parse(Convert.ToString(map["PrismDownAction"], CultureInfo.InvariantCulture), _prismDownAction);
+            if (map.ContainsKey("ClaudeUpAction"))
+                _claudeUpAction = KeyCombo.Parse(Convert.ToString(map["ClaudeUpAction"], CultureInfo.InvariantCulture), _claudeUpAction);
             if (map.ContainsKey("PrismWindowTitleContains"))
                 _prismTitleContains = ToStringArray(map["PrismWindowTitleContains"], _prismTitleContains);
+            if (map.ContainsKey("ClaudeWindowTitleContains"))
+                _claudeTitleContains = ToStringArray(map["ClaudeWindowTitleContains"], _claudeTitleContains);
             if (map.ContainsKey("PrismInputNameContains"))
                 _prismInputNameContains = ToStringArray(map["PrismInputNameContains"], _prismInputNameContains);
             if (map.ContainsKey("PrismCompileButtonNameContains"))
@@ -812,6 +849,7 @@ internal static class PresenterHotkey
             if (map.ContainsKey("PrismFocusDelayMs")) _prismFocusDelayMs = ToInt(map["PrismFocusDelayMs"], _prismFocusDelayMs);
             if (map.ContainsKey("PrismAutoCompileAfterEnter")) _prismAutoCompileAfterEnter = ToBool(map["PrismAutoCompileAfterEnter"], _prismAutoCompileAfterEnter);
             if (map.ContainsKey("PrismCompileDelayMs")) _prismCompileDelayMs = ToInt(map["PrismCompileDelayMs"], _prismCompileDelayMs);
+            if (map.ContainsKey("ClaudeDesktopOnly")) _claudeDesktopOnly = ToBool(map["ClaudeDesktopOnly"], _claudeDesktopOnly);
         }
         catch (Exception ex)
         {

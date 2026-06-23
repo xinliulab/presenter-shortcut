@@ -73,6 +73,7 @@ Start-Process -FilePath $exe -WindowStyle Hidden
 Write-Host 'PresenterHotkey is running (look for the tray icon).' -ForegroundColor Green
 Write-Host 'Double-press presenter Up  => Ctrl+Shift+D toggle in ChatGPT; hold/release Ctrl+Shift+D in Codex' -ForegroundColor Cyan
 Write-Host '                              PRISM tab: focus Ask anything, then Win+H voice typing' -ForegroundColor Cyan
+Write-Host '                              Claude desktop: Ctrl+D' -ForegroundColor Cyan
 Write-Host 'Double-press presenter Down => Enter (submit)' -ForegroundColor Cyan
 Write-Host 'ArrowUp/ArrowDown are intercepted; single presses are ignored.' -ForegroundColor Yellow
 Write-Host "Local config: $config" -ForegroundColor Yellow
