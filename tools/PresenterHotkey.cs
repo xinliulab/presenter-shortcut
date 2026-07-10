@@ -25,7 +25,9 @@
 //
 // Claude desktop dictation uses Ctrl+D, so when that desktop app is
 // foreground we map double ArrowUp to Ctrl+D while keeping double ArrowDown as
-// Enter.
+// Enter. For modern AI apps, double ArrowDown can also click the real Send
+// button via UI Automation before falling back to Enter. This survives app
+// updates where synthetic Enter no longer submits.
 
 using System;
 using System.Collections;
@@ -84,6 +86,11 @@ internal static class PresenterHotkey
     private static string[] _prismInputNameContains = new[] { "ask anything", "message", "prompt", "ask" };
     private static string[] _prismCompileButtonNameContains = new[] { "compile" };
     private static string[] _claudeTitleContains = new[] { "claude" };
+    private static string[] _smartSendButtonNameContains = new[] { "send", "submit" };
+    private static string[] _smartSendButtonNameExcludes = new[] { "feedback", "share", "copy", "stop", "voice", "dictation" };
+    private static string[] _smartSendForegroundContains = new[] { "chatgpt", "codex", "claude", "prism" };
+    private static string[] _codexHoldProcessNames = new[] { "codex", "chatgpt" };
+    private static string[] _codexHoldTitleContains = new[] { "codex" };
     private static bool _claudeDesktopOnly = true;
     private static int _prismFocusDelayMs = 150;
     private static bool _prismAutoCompileAfterEnter = true;
@@ -366,10 +373,13 @@ internal static class PresenterHotkey
             if (IsPrismForeground(foreground))
             {
                 IntPtr hwnd = GetForegroundWindow();
-                SendCombo(_prismDownAction);
-                Log("Down double-press -> PRISM " + _prismDownAction.Text +
-                    " (foreground=" + foreground + ", original arrows suppressed)");
+                SmartSendOrKey(hwnd, "PRISM", _prismDownAction, foreground);
                 SchedulePrismCompile(hwnd);
+            }
+            else if (IsSmartSendForeground(foreground))
+            {
+                IntPtr hwnd = GetForegroundWindow();
+                SmartSendOrKey(hwnd, "smart-send", _downAction, foreground);
             }
             else
             {
@@ -417,7 +427,10 @@ internal static class PresenterHotkey
 
     private static bool IsCodexForeground(string summary)
     {
-        return summary.IndexOf("codex", StringComparison.OrdinalIgnoreCase) >= 0;
+        string process = GetForegroundProcessName(summary);
+        if (ContainsAnyExact(process, _codexHoldProcessNames)) return true;
+        if (IsBrowserForeground(summary)) return false;
+        return ContainsAny(summary, _codexHoldTitleContains);
     }
 
     private static bool IsPrismForeground(string summary)
@@ -432,16 +445,26 @@ internal static class PresenterHotkey
         return !IsBrowserForeground(summary);
     }
 
+    private static bool IsSmartSendForeground(string summary)
+    {
+        return ContainsAny(summary, _smartSendForegroundContains);
+    }
+
     private static bool IsBrowserForeground(string summary)
     {
-        if (string.IsNullOrEmpty(summary)) return false;
-        int slash = summary.IndexOf('/');
-        string process = slash >= 0 ? summary.Substring(0, slash).Trim() : summary.Trim();
+        string process = GetForegroundProcessName(summary);
         return process.Equals("msedge", StringComparison.OrdinalIgnoreCase) ||
             process.Equals("chrome", StringComparison.OrdinalIgnoreCase) ||
             process.Equals("firefox", StringComparison.OrdinalIgnoreCase) ||
             process.Equals("brave", StringComparison.OrdinalIgnoreCase) ||
             process.Equals("opera", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string GetForegroundProcessName(string summary)
+    {
+        if (string.IsNullOrEmpty(summary)) return "";
+        int slash = summary.IndexOf('/');
+        return slash >= 0 ? summary.Substring(0, slash).Trim() : summary.Trim();
     }
 
     private static bool ContainsAny(string haystack, string[] needles)
@@ -451,6 +474,17 @@ internal static class PresenterHotkey
         {
             if (string.IsNullOrEmpty(raw)) continue;
             if (haystack.IndexOf(raw, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+        }
+        return false;
+    }
+
+    private static bool ContainsAnyExact(string value, string[] candidates)
+    {
+        if (string.IsNullOrEmpty(value) || candidates == null) return false;
+        foreach (var raw in candidates)
+        {
+            if (string.IsNullOrEmpty(raw)) continue;
+            if (value.Equals(raw.Trim(), StringComparison.OrdinalIgnoreCase)) return true;
         }
         return false;
     }
@@ -483,6 +517,89 @@ internal static class PresenterHotkey
     }
 
     // ---- Output ----
+    private static void SmartSendOrKey(IntPtr hwnd, string label, KeyCombo fallback, string foreground)
+    {
+        bool clicked = TryClickSmartSendButton(hwnd);
+        if (clicked)
+        {
+            Log("Down double-press -> " + label + " clicked Send button" +
+                " (foreground=" + foreground + ", original arrows suppressed)");
+            return;
+        }
+
+        SendCombo(fallback);
+        Log("Down double-press -> " + label + " fallback " + fallback.Text +
+            " (foreground=" + foreground + ", original arrows suppressed)");
+    }
+
+    private static bool TryClickSmartSendButton(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        try
+        {
+            var root = AutomationElement.FromHandle(hwnd);
+            if (root == null) return false;
+
+            AutomationElement button = FindSmartSendButton(root);
+            if (button == null)
+            {
+                Log("Smart send failed: no Send button found.");
+                return false;
+            }
+
+            object invokeObj;
+            if (button.TryGetCurrentPattern(InvokePattern.Pattern, out invokeObj))
+            {
+                ((InvokePattern)invokeObj).Invoke();
+                Log("Smart send clicked button: " + SafeAutomationText(button).Trim());
+                return true;
+            }
+
+            button.SetFocus();
+            SendCombo(KeyCombo.Parse("Enter", _downAction));
+            Log("Smart send focused button and sent Enter: " + SafeAutomationText(button).Trim());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log("Smart send exception: " + ex.GetType().Name + ": " + ex.Message);
+            return false;
+        }
+    }
+
+    private static AutomationElement FindSmartSendButton(AutomationElement root)
+    {
+        var buttonCondition = new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button);
+        AutomationElementCollection all = root.FindAll(TreeScope.Descendants, buttonCondition);
+        System.Windows.Rect rootRect = root.Current.BoundingRectangle;
+        double minTop = rootRect.Top + Math.Max(120, rootRect.Height * 0.35);
+
+        AutomationElement best = null;
+        double bestScore = double.MinValue;
+
+        for (int i = 0; i < all.Count; i++)
+        {
+            AutomationElement e = all[i];
+            if (!IsUsableAutomationElement(e)) continue;
+            string text = SafeAutomationText(e);
+            if (!ContainsAny(text, _smartSendButtonNameContains)) continue;
+            if (ContainsAny(text, _smartSendButtonNameExcludes)) continue;
+
+            System.Windows.Rect r = e.Current.BoundingRectangle;
+            double bottomBias = r.Bottom - minTop;
+            double rightBias = r.Right - rootRect.Left;
+            double score = bottomBias * 10 + rightBias;
+
+            if (score > bestScore)
+            {
+                best = e;
+                bestScore = score;
+            }
+        }
+
+        return best;
+    }
+
     private static void StartPrismDictation(string foreground)
     {
         bool focused = TryFocusPrismInput();
@@ -844,6 +961,16 @@ internal static class PresenterHotkey
                 _prismInputNameContains = ToStringArray(map["PrismInputNameContains"], _prismInputNameContains);
             if (map.ContainsKey("PrismCompileButtonNameContains"))
                 _prismCompileButtonNameContains = ToStringArray(map["PrismCompileButtonNameContains"], _prismCompileButtonNameContains);
+            if (map.ContainsKey("SmartSendButtonNameContains"))
+                _smartSendButtonNameContains = ToStringArray(map["SmartSendButtonNameContains"], _smartSendButtonNameContains);
+            if (map.ContainsKey("SmartSendButtonNameExcludes"))
+                _smartSendButtonNameExcludes = ToStringArray(map["SmartSendButtonNameExcludes"], _smartSendButtonNameExcludes);
+            if (map.ContainsKey("SmartSendForegroundContains"))
+                _smartSendForegroundContains = ToStringArray(map["SmartSendForegroundContains"], _smartSendForegroundContains);
+            if (map.ContainsKey("CodexHoldProcessNames"))
+                _codexHoldProcessNames = ToStringArray(map["CodexHoldProcessNames"], _codexHoldProcessNames);
+            if (map.ContainsKey("CodexHoldTitleContains"))
+                _codexHoldTitleContains = ToStringArray(map["CodexHoldTitleContains"], _codexHoldTitleContains);
             if (map.ContainsKey("DoublePressMs")) _doublePressMs = ToInt(map["DoublePressMs"], _doublePressMs);
             if (map.ContainsKey("ActionCooldownMs")) _actionCooldownMs = ToInt(map["ActionCooldownMs"], _actionCooldownMs);
             if (map.ContainsKey("PrismFocusDelayMs")) _prismFocusDelayMs = ToInt(map["PrismFocusDelayMs"], _prismFocusDelayMs);

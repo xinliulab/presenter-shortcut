@@ -74,7 +74,7 @@ Write-Host 'PresenterHotkey is running (look for the tray icon).' -ForegroundCol
 Write-Host 'Double-press presenter Up  => Ctrl+Shift+D toggle in ChatGPT; hold/release Ctrl+Shift+D in Codex' -ForegroundColor Cyan
 Write-Host '                              PRISM tab: focus Ask anything, then Win+H voice typing' -ForegroundColor Cyan
 Write-Host '                              Claude desktop: Ctrl+D' -ForegroundColor Cyan
-Write-Host 'Double-press presenter Down => Enter (submit)' -ForegroundColor Cyan
+Write-Host 'Double-press presenter Down => click Send when possible; otherwise Enter' -ForegroundColor Cyan
 Write-Host 'ArrowUp/ArrowDown are intercepted; single presses are ignored.' -ForegroundColor Yellow
 Write-Host "Local config: $config" -ForegroundColor Yellow
 Write-Host 'To stop: right-click the tray icon -> Exit, or run Stop-PresenterHotkey.ps1' -ForegroundColor Yellow
